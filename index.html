@@ -756,7 +756,7 @@
             gameState.waveBossSpawned = false;
             gameState.enemiesPerWave = 25;
             gameState.enemiesSpawnedInCurrentWave = 0;
-            gameState.bossSpawnThreshold = 0.8;
+            gameState.bossSpawnThreshold = 0.95;
             gameState.lastCombinationTimes = {}; // 조합별 쿨다운 시간 초기화
             // 레이저와 데미지 표시기 제거
             document.querySelectorAll('.laser, .damage-indicator, .particle, .wave-notification').forEach(el => el.remove());
@@ -1325,8 +1325,8 @@
                         return;
                     }
                 } else {
-                    // 적 위치 업데이트
-                    if (enemy.element) {
+                    // 적 위치 업데이트 - 중력 애니메이션 중인지 확인하는 조건 추가
+                    if (enemy.element && !enemy.inGravityAnimation) { // 이 조건 추가
                         enemy.element.style.left = `${enemy.x}px`;
                         enemy.element.style.top = `${enemy.y}px`;
                     }
@@ -1707,8 +1707,10 @@
         // 다음 웨이브 시작 함수 수정
         function startNextWave() {
             gameState.wave++;
-            gameState.enemySpawnRate = Math.max(800, 1500 - (gameState.wave * 100)); // 더 빠른 적 생성
+            gameState.enemySpawnRate = Math.max(500, 1500 - (gameState.wave * 150)); // 더 빠른 적 생성
 
+            gameState.multiSpawnRate = Math.max(200, 400 - (gameState.wave * 20)); // 다중 생성 간격도 감소
+            
             // 적 속도는 웨이브마다 조금씩 증가
             gameState.enemySpeed = 1 + (gameState.wave * 0.1);
 
@@ -1725,8 +1727,8 @@
             gameState.enemiesPerWave = 25 + (gameState.wave * 10);
 
             // 다중 생성 그룹 크기 증가
-            gameState.enemiesPerGroup = 2 + Math.floor(gameState.wave / 3);
-            if (gameState.enemiesPerGroup > 5) gameState.enemiesPerGroup = 5; // 최대 5마리
+            gameState.enemiesPerGroup = 2 + Math.floor(gameState.wave / 2);
+            if (gameState.enemiesPerGroup > 10) gameState.enemiesPerGroup = 10; // 최대 5마리
 
             // 웨이브 변수 초기화
             gameState.enemiesSpawnedInCurrentWave = 0;
@@ -2708,6 +2710,15 @@
                         enemy.element.style.top = `${targetY}px`;
                     }
 
+                    // 위치 업데이트
+                    if (enemy.element) {
+                        // 중력 애니메이션 중임을 표시하는 플래그 설정
+                        enemy.inGravityAnimation = true;
+
+                        enemy.element.style.left = `${targetX}px`;
+                        enemy.element.style.top = `${targetY}px`;
+                    }
+                    
                     // 애니메이션 계속
                     if (progress < 1 && gameState.isPlaying && enemy.hp > 0) {
                         requestAnimationFrame(animateEnemy);
@@ -2736,9 +2747,10 @@
                                 createLaser(cardCenterX, cardCenterY, enemyCenterX, enemyCenterY, '#ff00ff');
                             }
 
-                            // 원래 위치로 돌아가기 (패스 진행은 updateEnemies 함수에서 처리됨)
+                            // 원래 위치로 돌아가기 및 애니메이션 플래그 제거
                             setTimeout(() => {
                                 if (enemy.element) {
+                                    delete enemy.inGravityAnimation; // 플래그 제거
                                     enemy.element.style.transition = 'none';
                                     enemy.element.style.left = '';
                                     enemy.element.style.top = '';
