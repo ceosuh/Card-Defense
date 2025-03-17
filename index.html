@@ -1325,7 +1325,7 @@
 
             // 적 체력 계산 (웨이브에 따라 증가)
             const hp = Math.ceil(gameState.wave * 5);
-            const size = 30 + (hp / gameState.wave) * 2;
+            const size = 70 + (hp / gameState.wave) * 2;
 
             // 속도 계산 시 DPR 고려
             const dpr = gameState.devicePixelRatio || 1;
@@ -1372,7 +1372,7 @@
             const hp = Math.ceil(gameState.wave * 30 * hpMultiplier * bossRankMultiplier);
 
             // 보스 크기는 체력에 비례하되 최대 크기 제한
-            const size = Math.min(100, 70 + (gameState.wave / 20)); 
+            const size = Math.min(200, 150 + (gameState.wave / 20)); 
             // DPR 고려한 속도 조정 (추가)
             const dpr = gameState.devicePixelRatio || 1; // 없으면 기본값 1 사용
             const speedAdjustment = 1 / dpr;
@@ -2360,7 +2360,7 @@
                     const cards = [];
                     let validCombo = true;
                     let firstSuit = null;
-                    let lastCardIndex = -1;
+                    let expectedCardIndex = -1; // 연속성을 검사할 때 예상되는 다음 인덱스
 
                     // 5장의 카드 검사
                     for (let i = 0; i < requiredLength; i++) {
@@ -2371,11 +2371,24 @@
                         }
                         cards.push(card);
 
-                        // 첫 카드의 무늬 저장
+                        // 첫 카드의 무늬 저장 및 초기 인덱스 설정
                         if (i === 0) {
                             firstSuit = card.suit;
-                            // 첫 카드의 값을 인덱스로 변환
-                            lastCardIndex = cardValues.indexOf(card.value);
+                            expectedCardIndex = cardValues.indexOf(card.value);
+                            // 두 번째 카드의 예상 인덱스 설정 (방향에 따라 +1 또는 -1)
+                            if (i + 1 < requiredLength && boardMatrix[row][col + i + 1]) {
+                                const nextCardIndex = cardValues.indexOf(boardMatrix[row][col + i + 1].value);
+                                // 오름차순인지 내림차순인지 결정
+                                if (nextCardIndex > expectedCardIndex) {
+                                    expectedCardIndex++; // 오름차순
+                                } else if (nextCardIndex < expectedCardIndex) {
+                                    expectedCardIndex--; // 내림차순
+                                } else {
+                                    // 두 숫자가 같으면 유효하지 않은 조합
+                                    validCombo = false;
+                                    break;
+                                }
+                            }
                         } else {
                             // 무늬가 다르면 조합 실패
                             if (card.suit !== firstSuit) {
@@ -2386,13 +2399,30 @@
                             // 현재 카드의 값 인덱스
                             const currentIndex = cardValues.indexOf(card.value);
 
-                            // 연속된 숫자인지 확인 (인덱스가 1씩 증가)
-                            if (currentIndex !== lastCardIndex + 1) {
+                            // 예상 인덱스와 일치하지 않으면 조합 실패
+                            if (currentIndex !== expectedCardIndex) {
                                 validCombo = false;
                                 break;
                             }
 
-                            lastCardIndex = currentIndex;
+                            // 다음 예상 인덱스 업데이트 (같은 방향으로 계속)
+                            if (i === 1) {
+                                // 두 번째 카드를 확인한 후, 방향이 결정됨
+                                if (currentIndex > cardValues.indexOf(cards[0].value)) {
+                                    // 오름차순
+                                    expectedCardIndex++;
+                                } else {
+                                    // 내림차순
+                                    expectedCardIndex--;
+                                }
+                            } else {
+                                // 이미 방향이 결정된 경우, 해당 방향으로 계속
+                                if (expectedCardIndex > currentIndex) {
+                                    expectedCardIndex--;
+                                } else {
+                                    expectedCardIndex++;
+                                }
+                            }
                         }
                     }
 
@@ -2406,13 +2436,13 @@
                 }
             }
 
-            // 세로 방향 검사
+            // 세로 방향 검사 - 위와 동일한 로직으로 수정
             for (let col = 0; col < gameState.boardCols; col++) {
                 for (let row = 0; row <= gameState.boardRows - requiredLength; row++) {
                     const cards = [];
                     let validCombo = true;
                     let firstSuit = null;
-                    let lastCardIndex = -1;
+                    let expectedCardIndex = -1;
 
                     for (let i = 0; i < requiredLength; i++) {
                         const card = boardMatrix[row + i][col];
@@ -2424,7 +2454,19 @@
 
                         if (i === 0) {
                             firstSuit = card.suit;
-                            lastCardIndex = cardValues.indexOf(card.value);
+                            expectedCardIndex = cardValues.indexOf(card.value);
+                            // 두 번째 카드의 예상 인덱스 설정
+                            if (i + 1 < requiredLength && boardMatrix[row + i + 1][col]) {
+                                const nextCardIndex = cardValues.indexOf(boardMatrix[row + i + 1][col].value);
+                                if (nextCardIndex > expectedCardIndex) {
+                                    expectedCardIndex++; // 오름차순
+                                } else if (nextCardIndex < expectedCardIndex) {
+                                    expectedCardIndex--; // 내림차순
+                                } else {
+                                    validCombo = false;
+                                    break;
+                                }
+                            }
                         } else {
                             if (card.suit !== firstSuit) {
                                 validCombo = false;
@@ -2433,12 +2475,24 @@
 
                             const currentIndex = cardValues.indexOf(card.value);
 
-                            if (currentIndex !== lastCardIndex + 1) {
+                            if (currentIndex !== expectedCardIndex) {
                                 validCombo = false;
                                 break;
                             }
 
-                            lastCardIndex = currentIndex;
+                            if (i === 1) {
+                                if (currentIndex > cardValues.indexOf(cards[0].value)) {
+                                    expectedCardIndex++;
+                                } else {
+                                    expectedCardIndex--;
+                                }
+                            } else {
+                                if (expectedCardIndex > currentIndex) {
+                                    expectedCardIndex--;
+                                } else {
+                                    expectedCardIndex++;
+                                }
+                            }
                         }
                     }
 
@@ -2474,16 +2528,28 @@
         function isFiveStraight(cards) {
             if (!cards.every(card => card !== null)) return false;
 
-            // 카드 값을 인덱스로 변환
-            const indices = cards.map(card => cardValues.indexOf(card.value)).sort((a, b) => a - b);
+            // 카드 값을 인덱스로 변환 (정렬하지 않음)
+            const indices = cards.map(card => cardValues.indexOf(card.value));
 
-            // 연속된 인덱스인지 확인
+            // 오름차순인지 확인
+            let ascending = true;
             for (let i = 1; i < indices.length; i++) {
                 if (indices[i] !== indices[i-1] + 1) {
-                    return false;
+                    ascending = false;
+                    break;
                 }
             }
-            return true;
+
+            // 내림차순인지 확인
+            let descending = true;
+            for (let i = 1; i < indices.length; i++) {
+                if (indices[i] !== indices[i-1] - 1) {
+                    descending = false;
+                    break;
+                }
+            }
+
+            return ascending || descending;
         }
 
         function isThreeOfAKind(cards) {
