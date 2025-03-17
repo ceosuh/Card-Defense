@@ -743,6 +743,9 @@
             enemiesSpawnedInCurrentWave: 0,
             bossSpawnThreshold: 0.8, // 웨이브의 80% 적이 소환된 후 보스 등장
             lastCombinationTimes: {}, // 조합별 쿨다운 시간
+            enemySpawnTimer: 0,      // 적 생성 타이머
+            multiSpawnTimer: 0,      // 다중 적 생성 타이머
+            lastFrameTime: 0,        // 이전 프레임 시간
 
         };
 
@@ -821,6 +824,13 @@
             gameState.bossSpawnThreshold = 0.95;
             gameState.lastCombinationTimes = {}; // 조합별 쿨다운 시간 초기화
             gameState.frameCount = 0; // 추가: 프레임 카운터
+            // 타이머 변수 초기화
+            gameState.enemySpawnTimer = 0;
+            gameState.multiSpawnTimer = 0;
+            gameState.lastFrameTime = 0;
+            // 보스 관련 변수 추가
+            gameState.bossCount = 1;         // 기본 보스 수
+            gameState.bossesSpawned = 0;     // 현재 웨이브에서 생성된 보스 수
             // 레이저와 데미지 표시기 제거
             document.querySelectorAll('.laser, .damage-indicator, .particle, .wave-notification').forEach(el => el.remove());
             // UI 업데이트
@@ -1241,8 +1251,9 @@
 
             const now = Date.now();
 
-            // 웨이브의 모든 적이 소환되었고 보스도 소환되었으면 생성 중단
-            if (gameState.enemiesSpawnedInCurrentWave >= gameState.enemiesPerWave && gameState.waveBossSpawned) {
+            // 모든 적과 보스가 소환되었으면 생성 중단
+            if (gameState.enemiesSpawnedInCurrentWave >= gameState.enemiesPerWave && 
+                gameState.bossesSpawned >= gameState.bossCount) {
                 return;
             }
 
@@ -1252,14 +1263,21 @@
                 gameState.lastMultiSpawn = now;
 
                 // 보스 적 생성 여부 결정
-                const shouldSpawnBoss = !gameState.waveBossSpawned && 
-                                        gameState.enemiesSpawnedInCurrentWave >= Math.floor(gameState.enemiesPerWave * gameState.bossSpawnThreshold);
+                // 보스 생성 조건: 웨이브의 일정 비율 적이 생성됐고, 아직 생성된 보스 수가 목표보다 적을 때
+                const shouldSpawnBoss = gameState.enemiesSpawnedInCurrentWave >= Math.floor(gameState.enemiesPerWave * gameState.bossSpawnThreshold) && 
+                                      gameState.bossesSpawned < gameState.bossCount;
 
                 if (shouldSpawnBoss) {
                     // 보스 생성
                     spawnBossEnemy();
+                    gameState.bossesSpawned++; // 보스 생성 카운터 증가
+
+                    // 모든 보스가 소환되었으면 표시 업데이트
+                    if (gameState.bossesSpawned >= gameState.bossCount) {
+                        gameState.waveBossSpawned = true;
+                    }
                 } else {
-                    // 첫 적 생성
+                    // 일반 적 생성
                     spawnSingleEnemy();
 
                     // 이 시점에서 멀티 스폰 카운터 초기화
@@ -1267,7 +1285,7 @@
                 }
             } 
             // 다중 적 생성 (첫 적 생성 후 추가 적 생성)
-            else if (!gameState.waveBossSpawned && 
+            else if (gameState.bossesSpawned < gameState.bossCount && 
                     gameState.enemiesSpawnedInCurrentWave < gameState.enemiesPerWave && 
                     now - gameState.lastMultiSpawn >= gameState.multiSpawnRate) {
 
@@ -1327,8 +1345,21 @@
             const startY = boardHeight * 0.8; // 보드의 약 80% 높이 지점
 
             // 보스 적 체력 및 크기 설정 (더 강화)
-            const hp = Math.ceil(gameState.wave * 30 * (1 + gameState.wave * 0.08)); // 더 강력한 보스 
-            const size = 70; // 더 큰 크기
+            // 웨이브 100 이상일 경우 보스 강화
+            let hpMultiplier = 1 + (gameState.wave * 0.08);
+
+            // 웨이브 100 이상부터 보스 추가 강화
+            if (gameState.wave >= 100) {
+                hpMultiplier += (gameState.wave - 99) * 0.02; // 웨이브 100부터 추가 강화
+            }
+
+            // 여러 보스가 있을 경우 나중에 나오는 보스는 더 강함
+            const bossRankMultiplier = 1 + (gameState.bossesSpawned * 0.2); // 보스 순서에 따른 추가 강화
+
+            const hp = Math.ceil(gameState.wave * 30 * hpMultiplier * bossRankMultiplier);
+
+            // 보스 크기는 체력에 비례하되 최대 크기 제한
+            const size = Math.min(100, 70 + (gameState.wave / 20)); 
 
             const enemy = {
                 x: startX,
@@ -1336,14 +1367,14 @@
                 pathProgress: 0, // 경로 진행 상태 (0~1)
                 hp: hp,
                 maxHp: hp,
-                speed: gameState.enemySpeed * 0.0005, // 보스는 더 느림, 경로 진행에 맞게 속도 조정
+                speed: gameState.enemySpeed * 0.0005, // 보스는 더 느림
                 element: null,
                 spawned: Date.now(),
-                isBoss: true
+                isBoss: true,
+                bossRank: gameState.bossesSpawned + 1 // 보스 등급 (1이 첫 번째 보스)
             };
 
             createEnemyElement(enemy, size, true);
-            gameState.waveBossSpawned = true;
         }
 
         // 적 요소 생성 함수
@@ -1418,10 +1449,10 @@
             // 3: 5시 방향 종료점 (오른쪽 아래)
 
             const pathPoints = [
-                { x: 0, y: boardHeight * 0.9 },  // 7시 시작점
-                { x: 0, y: 0 },                   // 왼쪽 위
-                { x: boardWidth * 0.95, y: 0 },         // 오른쪽 위
-                { x: boardWidth * 0.95, y: boardHeight * 0.9 }  // 5시 종료점
+                { x: -20, y: boardHeight * 0.9 },  // 7시 시작점
+                { x: -20, y: -20 },                   // 왼쪽 위
+                { x: boardWidth * 0.97, y: -20 },         // 오른쪽 위
+                { x: boardWidth * 0.97, y: boardHeight * 0.9 }  // 5시 종료점
             ];
 
             // 각 경로 세그먼트의 길이 비율 (총 길이에 대한 비율)
@@ -1801,6 +1832,10 @@
             startButton.disabled = true;
             startModal.style.display = 'none';
 
+            // 초기 시간 설정 초기화
+            gameState.lastFrameTime = 0;
+            gameState.enemySpawnTimer = gameState.enemySpawnRate * 0.9; // 게임 시작 직후 곧 첫 적 생성
+
             // 게임 루프 시작
             if (gameState.animationId) {
                 cancelAnimationFrame(gameState.animationId);
@@ -1839,10 +1874,21 @@
             // 새 웨이브 시작시 스킬 하이라이트 초기화
             resetAllSkillHighlights();
             gameState.wave++;
-            gameState.enemySpawnRate = Math.max(500, 1500 - (gameState.wave * 150)); // 더 빠른 적 생성
 
+            // 웨이브 100부터는 추가 보스 적 설정
+            if (gameState.wave >= 100) {
+                // 웨이브 100 이상부터 보스 수 증가 (웨이브 100에서 1개, 이후 웨이브당 +1)
+                gameState.bossCount = 1 + Math.floor((gameState.wave - 100) / 1);
+            } else {
+                gameState.bossCount = 1; // 기본 보스는 1개
+            }
+
+            // 보스 생성 카운터 초기화
+            gameState.bossesSpawned = 0;
+
+            gameState.enemySpawnRate = Math.max(500, 1500 - (gameState.wave * 150)); // 더 빠른 적 생성
             gameState.multiSpawnRate = Math.max(200, 400 - (gameState.wave * 25)); // 다중 생성 간격도 감소
-            
+
             // 적 속도는 웨이브마다 조금씩 증가
             gameState.enemySpeed = 1 + (gameState.wave * 0.1);
 
@@ -1860,7 +1906,7 @@
 
             // 다중 생성 그룹 크기 증가
             gameState.enemiesPerGroup = 2 + Math.floor(gameState.wave / 2);
-            if (gameState.enemiesPerGroup > 8) gameState.enemiesPerGroup = 8; // 최대 5마리
+            if (gameState.enemiesPerGroup > 8) gameState.enemiesPerGroup = 8; // 최대 8마리
 
             // 웨이브 변수 초기화
             gameState.enemiesSpawnedInCurrentWave = 0;
@@ -1935,36 +1981,41 @@
             }
         }
         
-        // 게임 루프
-        function gameLoop() {
-            if (gameState.isPlaying) {
-                spawnEnemy();
-                updateEnemies();
-                attackEnemies();
+        // 게임 루프 수정
+        // 게임 루프 수정
+        function gameLoop(currentTime) {
+            if (!gameState.isPlaying) {
+                gameState.animationId = requestAnimationFrame(gameLoop);
+                return;
+            }
 
-                // 카드 조합 감지
-                checkCardCombinations();
+            // 첫 프레임에서는 델타타임을 0으로 설정
+            if (!gameState.lastFrameTime) {
+                gameState.lastFrameTime = currentTime;
+            }
 
-                // 주기적으로 애니메이션 요소 정리 (10프레임마다)
-                if (gameState.frameCount % 10 === 0) {
-                    cleanupAnimationElements();
-                }
-                gameState.frameCount++; // 프레임 카운터 증가
+            // 델타타임 계산 (초 단위)
+            const deltaTime = Math.min(0.1, (currentTime - gameState.lastFrameTime) / 1000); // 최대 0.1초로 제한
+            gameState.lastFrameTime = currentTime;
 
-                // 적이 모두 제거된 경우 다음 웨이브 진행
-                // 보스가 소환되고 죽었거나, 아직 보스가 등장하지 않은 경우 모두 고려
-                if (gameState.enemies.length === 0 && 
-                    Date.now() - gameState.lastEnemySpawn > 1000) {
+            // 게임 상태 업데이트 (델타타임 전달)
+            spawnEnemy(deltaTime);
+            updateEnemies(deltaTime);
+            attackEnemies(deltaTime);
+            checkCardCombinations();
 
-                    // 현재 웨이브의 모든 적이 생성되었고, 더 이상 적이 없으면 다음 웨이브로
-                    if (gameState.enemiesSpawnedInCurrentWave >= gameState.enemiesPerWave) {
-                        startNextWave();
-                    } 
-                    // 아직 웨이브의 모든 적이 생성되지 않았지만 보스가 소환되지 않은 경우
-                    else if (!gameState.waveBossSpawned) {
-                        startNextWave();
-                    }
-                }
+            // 주기적으로 애니메이션 요소 정리
+            gameState.frameCount++;
+            if (gameState.frameCount % 10 === 0) {
+                cleanupAnimationElements();
+            }
+
+            // 적이 모두 제거된 경우 다음 웨이브 진행
+            if (gameState.enemies.length === 0 && 
+                gameState.enemiesSpawnedInCurrentWave >= gameState.enemiesPerWave &&
+                gameState.waveBossSpawned &&
+                Date.now() - gameState.lastEnemySpawn > 1000) {
+                startNextWave();
             }
 
             gameState.animationId = requestAnimationFrame(gameLoop);
@@ -2892,7 +2943,7 @@
             }
         }
 
-        // 중력 폭탄 (같은 무늬 연속 숫자 조합 공격)
+        // 중력 폭탄 함수 수정 - 레이저 대신 번쩍이는 효과 사용
         function performGravityBomb(combination) {
             const boardRect = gameBoardElement.getBoundingClientRect();
             const centerX = boardRect.width / 2;
@@ -2900,7 +2951,7 @@
 
             // 보드에 있는 카드 수에 따라 데미지 증가
             const cardCount = gameState.cards.filter(card => card.onBoard).length;
-            const baseDamage = calculateComboDamage(combination.cards) * (1 + cardCount * 0.1); // 카드가 많을수록 더 강력해짐
+            const baseDamage = calculateComboDamage(combination.cards) * (1 + cardCount * 0.1);
 
             // 모든 적에게 적용
             const affectedEnemies = [];
@@ -2921,61 +2972,27 @@
                 function animateEnemy() {
                     const elapsed = Date.now() - startTime;
                     const progress = Math.min(elapsed / duration, 1);
-
-                    // 이징 함수로 부드러운 이동 효과
                     const easeProgress = 1 - Math.pow(1 - progress, 3);
-
-                    // 중앙으로 이동하되, 완전히 중앙으로 가지는 않게 함
                     const targetX = centerX + (enemy.originalX - centerX) * (1 - easeProgress * 0.7);
                     const targetY = centerY + (enemy.originalY - centerY) * (1 - easeProgress * 0.7);
 
-                    // 위치 업데이트
                     if (enemy.element) {
-                        enemy.element.style.left = `${targetX}px`;
-                        enemy.element.style.top = `${targetY}px`;
-                    }
-
-                    // 위치 업데이트
-                    if (enemy.element) {
-                        // 중력 애니메이션 중임을 표시하는 플래그 설정
                         enemy.inGravityAnimation = true;
-
                         enemy.element.style.left = `${targetX}px`;
                         enemy.element.style.top = `${targetY}px`;
                     }
-                    
-                    // 애니메이션 계속
+
                     if (progress < 1 && gameState.isPlaying && enemy.hp > 0) {
                         requestAnimationFrame(animateEnemy);
                     } else if (progress >= 1) {
-                        // 애니메이션 완료 시 폭발 및 데미지
                         if (enemy.element) {
-                            const enemyRect = enemy.element.getBoundingClientRect();
-                            const enemyCenterX = enemyRect.left + enemyRect.width / 2;
-                            const enemyCenterY = enemyRect.top + enemyRect.height / 2;
-
-                            // 보스는 대미지 저항이 있음
                             const damage = enemy.isBoss ? baseDamage * 0.7 : baseDamage;
-
-                            // 대미지 적용
                             applyDamageToEnemy(enemy, damage, true);
 
-                            // 폭발 이펙트
-                            createExplosion(enemyCenterX, enemyCenterY, 15, '#ff00ff');
-
-                            // 카드에서 적으로 중력파 레이저 효과
-                            if (combination.cards[0] && combination.cards[0].element) {
-                                const cardRect = combination.cards[0].element.getBoundingClientRect();
-                                const cardCenterX = cardRect.left + cardRect.width / 2;
-                                const cardCenterY = cardRect.top + cardRect.height / 2;
-
-                                createLaser(cardCenterX, cardCenterY, enemyCenterX, enemyCenterY, '#ff00ff');
-                            }
-
-                            // 원래 위치로 돌아가기 및 애니메이션 플래그 제거
+                            // 원래 위치로 돌아가기
                             setTimeout(() => {
                                 if (enemy.element) {
-                                    delete enemy.inGravityAnimation; // 플래그 제거
+                                    delete enemy.inGravityAnimation;
                                     enemy.element.style.transition = 'none';
                                     enemy.element.style.left = '';
                                     enemy.element.style.top = '';
@@ -2986,12 +3003,11 @@
                     }
                 }
 
-                // 애니메이션 시작
                 enemy.element.style.transition = 'none';
                 animateEnemy();
             });
 
-            // 중앙에 큰 중력장 효과
+            // 중앙 중력장 효과 (기존 코드 유지)
             const gravityField = document.createElement('div');
             gravityField.className = 'gravity-field';
             gravityField.style.position = 'absolute';
@@ -3005,7 +3021,6 @@
             gravityField.style.transform = 'translate(-50%, -50%)';
             gravityField.style.zIndex = '40';
             gravityField.style.pointerEvents = 'none';
-
             document.body.appendChild(gravityField);
 
             // 중력장 애니메이션
@@ -3017,6 +3032,29 @@
                 duration: 2000,
                 easing: 'cubic-bezier(0.1, 0.8, 0.2, 1)'
             }).onfinish = () => gravityField.remove();
+
+            // 여기에 번쩍이는 효과 추가 (레이저 대신)
+            const flashEffect = document.createElement('div');
+            flashEffect.style.position = 'absolute';
+            flashEffect.style.left = '0';
+            flashEffect.style.top = '0';
+            flashEffect.style.width = '100%';
+            flashEffect.style.height = '100%';
+            flashEffect.style.backgroundColor = 'rgba(255, 0, 255, 0.3)';
+            flashEffect.style.zIndex = '30';
+            flashEffect.style.pointerEvents = 'none';
+            document.body.appendChild(flashEffect);
+
+            // 번쩍이는 애니메이션 (3번 깜빡임)
+            let flashCount = 0;
+            const flashInterval = setInterval(() => {
+                flashEffect.style.opacity = flashCount % 2 === 0 ? '0.5' : '0';
+                flashCount++;
+                if (flashCount >= 6) {
+                    clearInterval(flashInterval);
+                    flashEffect.remove();
+                }
+            }, 100);
         }
         
         // 조합 대미지 계산
