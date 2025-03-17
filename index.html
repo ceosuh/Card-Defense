@@ -798,6 +798,17 @@
                     cell.dataset.col = col;
                     cell.addEventListener('click', handleCellClick);
                     gameBoardElement.appendChild(cell);
+                    // 장치 픽셀 비율 계산 및 저장
+                    gameState.devicePixelRatio = window.devicePixelRatio || 1;
+                    console.log(`Device Pixel Ratio: ${gameState.devicePixelRatio}`);
+
+                    // 기본 생성 간격 저장 (조정되지 않은 원래 값)
+                    gameState.baseEnemySpawnRate = 1500; // 원래 enemySpawnRate 값
+                    gameState.baseMultiSpawnRate = 400;  // 원래 multiSpawnRate 값
+
+                    // 현재 사용할 값은 그대로 유지
+                    gameState.enemySpawnRate = 1500;
+                    gameState.multiSpawnRate = 400;
                 }
             }
             // 손의 카드 영역 비우기
@@ -852,6 +863,12 @@
 
             // 카드 뽑기
             function drawCard() {
+                // 손에 있는 카드 수 확인 (최대 10개)
+                const handCards = gameState.cards.filter(card => !card.onBoard);
+                if (handCards.length >= 10) {
+                    // 손에 카드가 이미 10개 있으면 카드를 추가하지 않고 false 반환
+                    return false;
+                }
                 // 가중치 기반 카드 값 선택
                 const valueIndex = weightedRandomSelection(cardValues, cardWeights);
                 const suitIndex = Math.floor(Math.random() * cardSuits.length);
@@ -1257,20 +1274,24 @@
                 return;
             }
 
+            // DPR에 따른 생성 간격 조정 (런타임에 조정)
+            const dpr = gameState.devicePixelRatio || 1;
+            const adjustedEnemySpawnRate = gameState.baseEnemySpawnRate * dpr;
+            const adjustedMultiSpawnRate = gameState.baseMultiSpawnRate * dpr;
+
             // 다중 적 생성 처리
-            if (now - gameState.lastEnemySpawn >= gameState.enemySpawnRate) {
+            if (now - gameState.lastEnemySpawn >= adjustedEnemySpawnRate) {
                 gameState.lastEnemySpawn = now;
                 gameState.lastMultiSpawn = now;
 
                 // 보스 적 생성 여부 결정
-                // 보스 생성 조건: 웨이브의 일정 비율 적이 생성됐고, 아직 생성된 보스 수가 목표보다 적을 때
                 const shouldSpawnBoss = gameState.enemiesSpawnedInCurrentWave >= Math.floor(gameState.enemiesPerWave * gameState.bossSpawnThreshold) && 
                                       gameState.bossesSpawned < gameState.bossCount;
 
                 if (shouldSpawnBoss) {
                     // 보스 생성
                     spawnBossEnemy();
-                    gameState.bossesSpawned++; // 보스 생성 카운터 증가
+                    gameState.bossesSpawned++;
 
                     // 모든 보스가 소환되었으면 표시 업데이트
                     if (gameState.bossesSpawned >= gameState.bossCount) {
@@ -1287,7 +1308,7 @@
             // 다중 적 생성 (첫 적 생성 후 추가 적 생성)
             else if (gameState.bossesSpawned < gameState.bossCount && 
                     gameState.enemiesSpawnedInCurrentWave < gameState.enemiesPerWave && 
-                    now - gameState.lastMultiSpawn >= gameState.multiSpawnRate) {
+                    now - gameState.lastMultiSpawn >= adjustedMultiSpawnRate) {
 
                 gameState.lastMultiSpawn = now;
 
@@ -1312,19 +1333,23 @@
 
             // 7시 방향에서 시작 (왼쪽 아래)
             const startX = 0;
-            const startY = boardHeight * 0.8; // 보드의 약 80% 높이 지점
+            const startY = boardHeight * 0.8;
 
             // 적 체력 계산 (웨이브에 따라 증가)
-            const hp = Math.ceil(gameState.wave * 5); // 적 체력 증가
-            const size = 30 + (hp / gameState.wave) * 2; // 체력에 비례한 크기
+            const hp = Math.ceil(gameState.wave * 5);
+            const size = 30 + (hp / gameState.wave) * 2;
+
+            // 속도 계산 시 DPR 고려
+            const dpr = gameState.devicePixelRatio || 1;
+            const speedAdjustment = 1 / dpr; // DPR이 높을수록 속도 감소
 
             const enemy = {
                 x: startX,
                 y: startY,
-                pathProgress: 0, // 경로 진행 상태 (0~1)
+                pathProgress: 0,
                 hp: hp,
                 maxHp: hp,
-                speed: gameState.enemySpeed * 0.001, // 경로 진행에 맞게 속도 조정
+                speed: gameState.enemySpeed * 0.001 * speedAdjustment, // 경로 진행에 맞게 속도 조정
                 element: null,
                 spawned: Date.now(),
                 isBoss: false
@@ -1360,6 +1385,9 @@
 
             // 보스 크기는 체력에 비례하되 최대 크기 제한
             const size = Math.min(100, 70 + (gameState.wave / 20)); 
+            // DPR 고려한 속도 조정 (추가)
+            const dpr = gameState.devicePixelRatio || 1; // 없으면 기본값 1 사용
+            const speedAdjustment = 1 / dpr;
 
             const enemy = {
                 x: startX,
@@ -1367,7 +1395,7 @@
                 pathProgress: 0, // 경로 진행 상태 (0~1)
                 hp: hp,
                 maxHp: hp,
-                speed: gameState.enemySpeed * 0.0005, // 보스는 더 느림
+                speed: gameState.enemySpeed * 0.0005 * speedAdjustment,// 보스는 더 느림
                 element: null,
                 spawned: Date.now(),
                 isBoss: true,
@@ -1382,10 +1410,14 @@
             const enemyElement = document.createElement('div');
             enemyElement.className = isBoss ? 'enemy boss' : 'enemy';
             enemyElement.textContent = enemy.hp;
+
+            // 픽셀 비율 고려한 크기 적용
+            const scaledSize = size / gameState.devicePixelRatio;
+
             enemyElement.style.left = `${enemy.x}px`;
             enemyElement.style.top = `${enemy.y}px`;
-            enemyElement.style.width = `${size}px`;
-            enemyElement.style.height = `${size}px`;
+            enemyElement.style.width = `${scaledSize}px`;
+            enemyElement.style.height = `${scaledSize}px`;
 
             // 체력 바 추가
             const healthBar = document.createElement('div');
@@ -1442,22 +1474,20 @@
 
         // 경로에 따른 위치 계산 (7시 → 보드 가장자리 → 5시)
         function calculatePathPosition(progress, boardWidth, boardHeight) {
-            // 경로 지점 정의 (4개의 주요 지점)
-            // 0: 7시 방향 시작점 (왼쪽 아래)
-            // 1: 왼쪽 위 모서리
-            // 2: 오른쪽 위 모서리
-            // 3: 5시 방향 종료점 (오른쪽 아래)
+        // 경로 지점 정의 (4개의 주요 지점)
+        // DPR 조정 적용
+        const dpr = gameState.devicePixelRatio || 1;
 
-            const pathPoints = [
-                { x: -20, y: boardHeight * 0.9 },  // 7시 시작점
-                { x: -20, y: -20 },                   // 왼쪽 위
-                { x: boardWidth * 0.97, y: -20 },         // 오른쪽 위
-                { x: boardWidth * 0.97, y: boardHeight * 0.9 }  // 5시 종료점
-            ];
+        const pathPoints = [
+            { x: -20 / dpr, y: boardHeight * 0.9 },  // 7시 시작점
+            { x: -20 / dpr, y: -20 / dpr },          // 왼쪽 위
+            { x: boardWidth * 0.97, y: -20 / dpr },  // 오른쪽 위
+            { x: boardWidth * 0.97, y: boardHeight * 0.9 }  // 5시 종료점
+        ];
 
-            // 각 경로 세그먼트의 길이 비율 (총 길이에 대한 비율)
-            const segmentLengths = [0.3, 0.3, 0.4];
-            const totalLength = segmentLengths.reduce((a, b) => a + b, 0);
+        // 각 경로 세그먼트의 길이 비율 (총 길이에 대한 비율)
+        const segmentLengths = [0.3, 0.3, 0.4];
+        const totalLength = segmentLengths.reduce((a, b) => a + b, 0);
 
             // 현재 경로의 어느 세그먼트에 있는지 계산
             let segmentIndex = 0;
@@ -1495,9 +1525,9 @@
             // 적 처치 시 점수 및 킬 카운트 증가
             if (wasKilled) {
                 // 보스 처치시 추가 점수와 카드 보상
-                if (enemy.isBoss) {
+                    if (enemy.isBoss) {
                     gameState.score += bonusScore * 2; // 보스는 2배 점수
-                    gameState.killCount += 3; // 보스는 3배의 킬 카운트
+                    gameState.killCount += 20; // 보스 처치시 킬카운트 20 증가로 수정
 
                     // 보스 사망 효과 (큰 폭발)
                     const enemyRect = enemy.element.getBoundingClientRect();
@@ -1508,7 +1538,7 @@
                         '#ffff00' // 노란색 폭발
                     );
 
-                    // 추가 카드 보상
+                    // 추가 카드 보상 - 카드 한도 확인 후 지급 (통과하지 않으면 무시)
                     drawCard();
 
 
@@ -1757,33 +1787,33 @@
         }
 
         // 레이저 효과 생성
-        function createLaser(startX, startY, endX, endY, color = 'var(--neon-pink)') {
-            const laser = document.createElement('div');
-            laser.className = 'laser';
+            function createLaser(startX, startY, endX, endY, color = 'var(--neon-pink)') {
+                const laser = document.createElement('div');
+                laser.className = 'laser';
 
-            // 레이저 위치 및 각도 설정
-            const angle = Math.atan2(endY - startY, endX - startX);
-            const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
+                // 레이저 위치 및 각도 설정
+                const angle = Math.atan2(endY - startY, endX - startX);
+                const length = Math.sqrt(Math.pow(endX - startX, 2) + Math.pow(endY - startY, 2));
 
-            laser.style.left = `${startX}px`;
-            laser.style.top = `${startY}px`;
-            laser.style.width = `${length}px`;
-            laser.style.transform = `rotate(${angle}rad)`;
-            laser.style.backgroundColor = color;
-            laser.style.boxShadow = `0 0 5px ${color}`;
+                // DPR 고려한 높이 조정 (기본 레이저 높이가 2px)
+                const dpr = gameState.devicePixelRatio || 1;
+                const laserHeight = Math.max(1, 2 / dpr); // 최소 1px 보장
 
-            // 특수 공격 레이저는 더 두껍게 표시
-            if (color !== 'var(--neon-pink)') {
-                laser.style.height = '3px';
+                laser.style.left = `${startX}px`;
+                laser.style.top = `${startY}px`;
+                laser.style.width = `${length}px`;
+                laser.style.height = `${laserHeight}px`; // 높이 조정
+                laser.style.transform = `rotate(${angle}rad)`;
+                laser.style.backgroundColor = color;
+                laser.style.boxShadow = `0 0 5px ${color}`;
+
+                document.body.appendChild(laser);
+
+                // 짧은 시간 후 레이저 제거
+                setTimeout(() => {
+                    laser.remove();
+                }, 200);
             }
-
-            document.body.appendChild(laser);
-
-            // 짧은 시간 후 레이저 제거
-            setTimeout(() => {
-                laser.remove();
-            }, 200);
-        }
 
         // 데미지 표시 생성
         function showDodgeIndicator(x, y) {
@@ -1827,21 +1857,23 @@
         }
 
         // 게임 시작
-        function startGame() {
-            gameState.isPlaying = true;
-            startButton.disabled = true;
-            startModal.style.display = 'none';
+            function startGame() {
+                gameState.isPlaying = true;
+                startButton.disabled = true;
+                startModal.style.display = 'none';
 
-            // 초기 시간 설정 초기화
-            gameState.lastFrameTime = 0;
-            gameState.enemySpawnTimer = gameState.enemySpawnRate * 0.9; // 게임 시작 직후 곧 첫 적 생성
+                // 초기 시간 설정 초기화
+                gameState.lastFrameTime = 0;
 
-            // 게임 루프 시작
-            if (gameState.animationId) {
-                cancelAnimationFrame(gameState.animationId);
+                // 게임 시작 직후 적이 곧 생성되도록 마지막 생성 시간을 과거로 설정
+                gameState.lastEnemySpawn = Date.now() - (gameState.baseEnemySpawnRate * 0.9);
+
+                // 게임 루프 시작
+                if (gameState.animationId) {
+                    cancelAnimationFrame(gameState.animationId);
+                }
+                gameLoop();
             }
-            gameLoop();
-        }
 
         // 게임 종료
         function endGame() {
@@ -2332,111 +2364,165 @@
         }
 
         // 같은 무늬의 연속된 5자리 숫자 찾기
-        function findSameSuitStraight(boardMatrix) {
-            const combinations = [];
-            const requiredLength = 5; // 정확히 5장의 카드만 필요
+            function findSameSuitStraight(boardMatrix) {
+                const combinations = [];
+                const requiredLength = 5; // 정확히 5장의 카드만 필요
 
-            // 가로 방향 검사
-            for (let row = 0; row < gameState.boardRows; row++) {
-                for (let col = 0; col <= gameState.boardCols - requiredLength; col++) {
-                    const cards = [];
-                    let validCombo = true;
-                    let firstSuit = null;
-                    let lastCardIndex = -1;
+                // 가로 방향 검사
+                for (let row = 0; row < gameState.boardRows; row++) {
+                    for (let col = 0; col <= gameState.boardCols - requiredLength; col++) {
+                        const cards = [];
+                        let validCombo = true;
+                        let firstSuit = null;
+                        let expectedCardIndex = -1; // 연속성을 검사할 때 예상되는 다음 인덱스
 
-                    // 5장의 카드 검사
-                    for (let i = 0; i < requiredLength; i++) {
-                        const card = boardMatrix[row][col + i];
-                        if (!card) {
-                            validCombo = false;
-                            break;
-                        }
-                        cards.push(card);
-
-                        // 첫 카드의 무늬 저장
-                        if (i === 0) {
-                            firstSuit = card.suit;
-                            // 첫 카드의 값을 인덱스로 변환
-                            lastCardIndex = cardValues.indexOf(card.value);
-                        } else {
-                            // 무늬가 다르면 조합 실패
-                            if (card.suit !== firstSuit) {
+                        // 5장의 카드 검사
+                        for (let i = 0; i < requiredLength; i++) {
+                            const card = boardMatrix[row][col + i];
+                            if (!card) {
                                 validCombo = false;
                                 break;
                             }
+                            cards.push(card);
 
-                            // 현재 카드의 값 인덱스
-                            const currentIndex = cardValues.indexOf(card.value);
+                            // 첫 카드의 무늬 저장 및 초기 인덱스 설정
+                            if (i === 0) {
+                                firstSuit = card.suit;
+                                expectedCardIndex = cardValues.indexOf(card.value);
+                                // 두 번째 카드의 예상 인덱스 설정 (방향에 따라 +1 또는 -1)
+                                if (i + 1 < requiredLength && boardMatrix[row][col + i + 1]) {
+                                    const nextCardIndex = cardValues.indexOf(boardMatrix[row][col + i + 1].value);
+                                    // 오름차순인지 내림차순인지 결정
+                                    if (nextCardIndex > expectedCardIndex) {
+                                        expectedCardIndex++; // 오름차순
+                                    } else if (nextCardIndex < expectedCardIndex) {
+                                        expectedCardIndex--; // 내림차순
+                                    } else {
+                                        // 두 숫자가 같으면 유효하지 않은 조합
+                                        validCombo = false;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                // 무늬가 다르면 조합 실패
+                                if (card.suit !== firstSuit) {
+                                    validCombo = false;
+                                    break;
+                                }
 
-                            // 연속된 숫자인지 확인 (인덱스가 1씩 증가)
-                            if (currentIndex !== lastCardIndex + 1) {
-                                validCombo = false;
-                                break;
+                                // 현재 카드의 값 인덱스
+                                const currentIndex = cardValues.indexOf(card.value);
+
+                                // 예상 인덱스와 일치하지 않으면 조합 실패
+                                if (currentIndex !== expectedCardIndex) {
+                                    validCombo = false;
+                                    break;
+                                }
+
+                                // 다음 예상 인덱스 업데이트 (같은 방향으로 계속)
+                                if (i === 1) {
+                                    // 두 번째 카드를 확인한 후, 방향이 결정됨
+                                    if (currentIndex > cardValues.indexOf(cards[0].value)) {
+                                        // 오름차순
+                                        expectedCardIndex++;
+                                    } else {
+                                        // 내림차순
+                                        expectedCardIndex--;
+                                    }
+                                } else {
+                                    // 이미 방향이 결정된 경우, 해당 방향으로 계속
+                                    if (expectedCardIndex > currentIndex) {
+                                        expectedCardIndex--;
+                                    } else {
+                                        expectedCardIndex++;
+                                    }
+                                }
                             }
-
-                            lastCardIndex = currentIndex;
                         }
-                    }
 
-                    if (validCombo) {
-                        combinations.push({
-                            type: 'sameSuitStraight',
-                            cards: cards,
-                            position: {row, col, direction: 'horizontal', length: requiredLength}
-                        });
+                        if (validCombo) {
+                            combinations.push({
+                                type: 'sameSuitStraight',
+                                cards: cards,
+                                position: {row, col, direction: 'horizontal', length: requiredLength}
+                            });
+                        }
                     }
                 }
-            }
 
-            // 세로 방향 검사
-            for (let col = 0; col < gameState.boardCols; col++) {
-                for (let row = 0; row <= gameState.boardRows - requiredLength; row++) {
-                    const cards = [];
-                    let validCombo = true;
-                    let firstSuit = null;
-                    let lastCardIndex = -1;
+                // 세로 방향 검사 - 위와 동일한 로직으로 수정
+                for (let col = 0; col < gameState.boardCols; col++) {
+                    for (let row = 0; row <= gameState.boardRows - requiredLength; row++) {
+                        const cards = [];
+                        let validCombo = true;
+                        let firstSuit = null;
+                        let expectedCardIndex = -1;
 
-                    for (let i = 0; i < requiredLength; i++) {
-                        const card = boardMatrix[row + i][col];
-                        if (!card) {
-                            validCombo = false;
-                            break;
-                        }
-                        cards.push(card);
-
-                        if (i === 0) {
-                            firstSuit = card.suit;
-                            lastCardIndex = cardValues.indexOf(card.value);
-                        } else {
-                            if (card.suit !== firstSuit) {
+                        for (let i = 0; i < requiredLength; i++) {
+                            const card = boardMatrix[row + i][col];
+                            if (!card) {
                                 validCombo = false;
                                 break;
                             }
+                            cards.push(card);
 
-                            const currentIndex = cardValues.indexOf(card.value);
+                            if (i === 0) {
+                                firstSuit = card.suit;
+                                expectedCardIndex = cardValues.indexOf(card.value);
+                                // 두 번째 카드의 예상 인덱스 설정
+                                if (i + 1 < requiredLength && boardMatrix[row + i + 1][col]) {
+                                    const nextCardIndex = cardValues.indexOf(boardMatrix[row + i + 1][col].value);
+                                    if (nextCardIndex > expectedCardIndex) {
+                                        expectedCardIndex++; // 오름차순
+                                    } else if (nextCardIndex < expectedCardIndex) {
+                                        expectedCardIndex--; // 내림차순
+                                    } else {
+                                        validCombo = false;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                if (card.suit !== firstSuit) {
+                                    validCombo = false;
+                                    break;
+                                }
 
-                            if (currentIndex !== lastCardIndex + 1) {
-                                validCombo = false;
-                                break;
+                                const currentIndex = cardValues.indexOf(card.value);
+
+                                if (currentIndex !== expectedCardIndex) {
+                                    validCombo = false;
+                                    break;
+                                }
+
+                                if (i === 1) {
+                                    if (currentIndex > cardValues.indexOf(cards[0].value)) {
+                                        expectedCardIndex++;
+                                    } else {
+                                        expectedCardIndex--;
+                                    }
+                                } else {
+                                    if (expectedCardIndex > currentIndex) {
+                                        expectedCardIndex--;
+                                    } else {
+                                        expectedCardIndex++;
+                                    }
+                                }
                             }
-
-                            lastCardIndex = currentIndex;
                         }
-                    }
 
-                    if (validCombo) {
-                        combinations.push({
-                            type: 'sameSuitStraight',
-                            cards: cards,
-                            position: {row, col, direction: 'vertical', length: requiredLength}
-                        });
+                        if (validCombo) {
+                            combinations.push({
+                                type: 'sameSuitStraight',
+                                cards: cards,
+                                position: {row, col, direction: 'vertical', length: requiredLength}
+                            });
+                        }
                     }
                 }
-            }
 
-            // 조합이 있으면 첫 번째 조합 반환
-            return combinations.length > 0 ? combinations[0] : null;
-        }
+                // 조합이 있으면 첫 번째 조합 반환
+                return combinations.length > 0 ? combinations[0] : null;
+            }
 
         // 조합 조건 확인 함수들
         function isFourOfAKind(cards) {
@@ -2453,20 +2539,33 @@
             return cards.every(card => card.suit === firstSuit);
         }
 
-        function isFiveStraight(cards) {
-            if (!cards.every(card => card !== null)) return false;
+            function isFiveStraight(cards) {
+                if (!cards.every(card => card !== null)) return false;
 
-            // 카드 값을 인덱스로 변환
-            const indices = cards.map(card => cardValues.indexOf(card.value)).sort((a, b) => a - b);
+                // 카드 배열이 이미 행 또는 열로 정렬되어 있다고 가정
+                // 카드 값을 인덱스로 변환 (정렬하지 않음)
+                const indices = cards.map(card => cardValues.indexOf(card.value));
 
-            // 연속된 인덱스인지 확인
-            for (let i = 1; i < indices.length; i++) {
-                if (indices[i] !== indices[i-1] + 1) {
-                    return false;
+                // 첫 번째 방법: 오름차순인지 확인
+                let ascending = true;
+                for (let i = 1; i < indices.length; i++) {
+                    if (indices[i] !== indices[i-1] + 1) {
+                        ascending = false;
+                        break;
+                    }
                 }
+
+                // 두 번째 방법: 내림차순인지 확인
+                let descending = true;
+                for (let i = 1; i < indices.length; i++) {
+                    if (indices[i] !== indices[i-1] - 1) {
+                        descending = false;
+                        break;
+                    }
+                }
+
+                return ascending || descending;
             }
-            return true;
-        }
 
         function isThreeOfAKind(cards) {
             if (!cards.every(card => card !== null)) return false;
@@ -2658,7 +2757,7 @@
         
         // 체인 라이트닝 공격
         function performChainLightning(combination) {
-            const baseDamage = calculateComboDamage(combination.cards) * 2.5; // 기본 데미지
+            const baseDamage = calculateComboDamage(combination.cards) * 3.5; // 기본 데미지
             const maxTargets = 10; // 최대 타겟 수
             const chainDelay = 150; // 연쇄 지연시간 (ms)
             const damageReduction = 0.9; // 각 연쇄마다 데미지 감소율 (90%)
@@ -3212,7 +3311,9 @@
 
         drawButton.addEventListener('click', () => {
             if (gameState.killCount >= gameState.killTarget) {
-                drawCard();
+                // 카드 드로우 시도 - 성공 여부와 관계없이 킬 카운트 차감
+                const cardDrawn = drawCard();
+                // 킬 카운트는 항상 차감 (카드가 뽑히든 안 뽑히든)
                 gameState.killCount -= gameState.killTarget;
                 updateUI();
             }
