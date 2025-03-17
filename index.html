@@ -1337,7 +1337,7 @@
 
             // 적 체력 계산 (웨이브에 따라 증가)
             const hp = Math.ceil(gameState.wave * 5);
-            const size = 30 + (hp / gameState.wave) * 2;
+            const size = 50 + (hp / gameState.wave) * 2;
 
             // 속도 계산 시 DPR 고려
             const dpr = gameState.devicePixelRatio || 1;
@@ -1349,7 +1349,7 @@
                 pathProgress: 0,
                 hp: hp,
                 maxHp: hp,
-                speed: gameState.enemySpeed * 0.001 * speedAdjustment, // 경로 진행에 맞게 속도 조정
+                speed: gameState.enemySpeed * 0.0015 * speedAdjustment, // 경로 진행에 맞게 속도 조정
                 element: null,
                 spawned: Date.now(),
                 isBoss: false
@@ -1384,7 +1384,7 @@
             const hp = Math.ceil(gameState.wave * 30 * hpMultiplier * bossRankMultiplier);
 
             // 보스 크기는 체력에 비례하되 최대 크기 제한
-            const size = Math.min(100, 70 + (gameState.wave / 20)); 
+            const size = Math.min(150, 100 + (gameState.wave / 20)); 
             // DPR 고려한 속도 조정 (추가)
             const dpr = gameState.devicePixelRatio || 1; // 없으면 기본값 1 사용
             const speedAdjustment = 1 / dpr;
@@ -1395,7 +1395,7 @@
                 pathProgress: 0, // 경로 진행 상태 (0~1)
                 hp: hp,
                 maxHp: hp,
-                speed: gameState.enemySpeed * 0.0005 * speedAdjustment,// 보스는 더 느림
+                speed: gameState.enemySpeed * 0.0006 * speedAdjustment,// 보스는 더 느림
                 element: null,
                 spawned: Date.now(),
                 isBoss: true,
