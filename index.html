@@ -917,6 +917,12 @@
         const cardSuits = ['♥', '♦', '♣', '♠'];
         const cardSuitClasses = ['suit-hearts', 'suit-diamonds', 'suit-clubs', 'suit-spades'];
         const cardValues = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+        // 카드 값에 따른 점수 추가
+        const cardMergeScores = {
+            '2': 10, '3': 20, '4': 30, '5': 40,
+            '6': 50, '7': 70, '8': 90, '9': 120,
+            '10': 150, 'J': 200, 'Q': 300, 'K': 500, 'A': 1000
+        };
 
         // 카드 값 진행 맵 (숫자 증가용)
         const cardValueProgression = {
@@ -1222,26 +1228,110 @@
         function levelUpCard(existingCard, cell) {
         existingCard.level += 1;
 
-        // K 카드가 레벨 4를 초과할 경우에만 A로 승급 가능하게 수정 (즉, 레벨 5가 될 때)
-        if (existingCard.value === 'K' && existingCard.level > 4) {
-            existingCard.value = 'A';
-            // A 카드의 경우 레이저 개수 설정
-            existingCard.laserCount = 1;
-            // 값에 따라 power 계산
-            const valueIndex = cardValues.indexOf('A');
-            existingCard.power = (valueIndex + 1) * 0.6;
-        } else if (existingCard.value !== 'A') {
-            // 기존 카드가 A가 아닐 경우에만 값 업그레이드
-            const nextValue = cardValueProgression[existingCard.value];
-            existingCard.value = nextValue;
+            // 카드 합치기 점수 추가
+            let mergeScore = cardMergeScores[existingCard.value] || 10;
+            // 레벨에 따른 보너스 점수 (레벨이 높을수록 더 많은 보너스)
+            mergeScore = Math.floor(mergeScore * (1 + (existingCard.level - 1) * 0.2));
+            gameState.score += mergeScore;
 
-            // 값에 따라 power 계산 (감소된 데미지)
-            const valueIndex = cardValues.indexOf(nextValue);
-            existingCard.power = (valueIndex + 1) * 0.6;
-        } else {
-            // A 카드의 경우 레벨업 시 레이저 개수 증가
-            existingCard.laserCount = Math.min(5, existingCard.level);
-        }
+            // 점수 획득 표시
+            const scoreIndicator = document.createElement('div');
+            scoreIndicator.className = 'damage-indicator';
+            scoreIndicator.textContent = `+${mergeScore}`;
+            scoreIndicator.style.left = `${cell.offsetLeft + cell.offsetWidth / 2}px`;
+            scoreIndicator.style.top = `${cell.offsetTop - 20}px`;
+            scoreIndicator.style.color = '#00ff00'; // 점수는 녹색으로 표시
+            scoreIndicator.style.fontSize = '1.2em';
+            scoreIndicator.style.fontWeight = 'bold';
+            document.body.appendChild(scoreIndicator);
+
+            // 애니메이션 후 요소 제거
+            setTimeout(() => {
+                scoreIndicator.remove();
+            }, 1000);
+
+            // UI 업데이트
+            updateUI();
+            
+        // K 카드가 레벨 4를 초과할 경우에만 A로 승급 가능하게 수정 (즉, 레벨 5가 될 때)
+            if (existingCard.value === 'K' && existingCard.level > 4) {
+                existingCard.value = 'A';
+                // A 카드의 경우 레이저 개수 설정
+                existingCard.laserCount = 1;
+                // 값에 따라 power 계산
+                const valueIndex = cardValues.indexOf('A');
+                existingCard.power = (valueIndex + 1) * 0.6;
+
+                // K에서 A로 승급 시 추가 보너스 점수
+                const upgradeBonus = 1000;
+                gameState.score += upgradeBonus;
+
+                // 승급 보너스 점수 표시
+                const bonusIndicator = document.createElement('div');
+                bonusIndicator.className = 'damage-indicator special';
+                bonusIndicator.textContent = `+${upgradeBonus} A 승급!`;
+                bonusIndicator.style.left = `${cell.offsetLeft + cell.offsetWidth / 2}px`;
+                bonusIndicator.style.top = `${cell.offsetTop - 20}px`;
+                bonusIndicator.style.color = '#ffff00'; // 승급 보너스는 노란색
+                document.body.appendChild(bonusIndicator);
+
+                // 애니메이션 후 요소 제거
+                setTimeout(() => {
+                    bonusIndicator.remove();
+                }, 1500);
+            } else if (existingCard.value !== 'A') {
+                // 기존 카드가 A가 아닐 경우에만 값 업그레이드
+                const nextValue = cardValueProgression[existingCard.value];
+
+                // 값이 업그레이드될 때 추가 점수
+                if (nextValue !== existingCard.value) {
+                    const upgradeScore = Math.floor((cardMergeScores[nextValue] - cardMergeScores[existingCard.value]) / 2);
+                    if (upgradeScore > 0) {
+                        gameState.score += upgradeScore;
+
+                        // 값 업그레이드 점수 표시
+                        const upgradeIndicator = document.createElement('div');
+                        upgradeIndicator.className = 'damage-indicator';
+                        upgradeIndicator.textContent = `+${upgradeScore}`;
+                        upgradeIndicator.style.left = `${cell.offsetLeft + cell.offsetWidth / 2}px`;
+                        upgradeIndicator.style.top = `${cell.offsetTop + 10}px`;
+                        upgradeIndicator.style.color = '#00ffaa'; // 업그레이드 점수는 밝은 녹색
+                        document.body.appendChild(upgradeIndicator);
+
+                        // 애니메이션 후 요소 제거
+                        setTimeout(() => {
+                            upgradeIndicator.remove();
+                        }, 1000);
+                    }
+                }
+
+                existingCard.value = nextValue;
+
+                // 값에 따라 power 계산 (감소된 데미지)
+                const valueIndex = cardValues.indexOf(nextValue);
+                existingCard.power = (valueIndex + 1) * 0.6;
+            } else {
+                // A 카드의 경우 레벨업 시 레이저 개수 증가
+                existingCard.laserCount = Math.min(5, existingCard.level);
+
+                // A 카드 레벨업 시 추가 보너스
+                const aLevelBonus = 200 * existingCard.level;
+                gameState.score += aLevelBonus;
+
+                // A 카드 레벨업 보너스 표시
+                const aLevelIndicator = document.createElement('div');
+                aLevelIndicator.className = 'damage-indicator';
+                aLevelIndicator.textContent = `+${aLevelBonus}`;
+                aLevelIndicator.style.left = `${cell.offsetLeft + cell.offsetWidth / 2}px`;
+                aLevelIndicator.style.top = `${cell.offsetTop - 20}px`;
+                aLevelIndicator.style.color = '#ffaa00'; // A 레벨업 보너스는 주황색
+                document.body.appendChild(aLevelIndicator);
+
+                // 애니메이션 후 요소 제거
+                setTimeout(() => {
+                    aLevelIndicator.remove();
+                }, 1000);
+            }
 
             // 공격력 증가 (레벨업 보너스 감소)
             existingCard.power = existingCard.power * 1.3;
